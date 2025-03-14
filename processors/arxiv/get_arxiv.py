@@ -6,15 +6,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict
 
 def read_json(path: str) -> Dict:
-    """
-    Read JSON.
-
-    Args:
-        path (str): The file path of the JSON file.
-
-    Returns:
-        Dict: The JSON dictionary.
-    """
+    """Read JSON from a file."""
     with open(path, 'r') as f:
         return json.load(f)
 
@@ -80,7 +72,7 @@ def download_pdfs(response: str, download_dir: str = 'data/pdf/arxiv') -> None:
 def main():
     """Interact with the arxiv API to download PDFs based on categories."""
     try:
-        arxiv_categories = read_json('configs/arxiv_categories.json')
+        arxiv_categories = read_json('../configs/arxiv_categories.json')
     except:
         raise ValueError("Failed to read arxiv categories")
 

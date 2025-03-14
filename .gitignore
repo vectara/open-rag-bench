@@ -1,3 +1,4 @@
 data/
+cache/
 __pycache__/
 draft*
