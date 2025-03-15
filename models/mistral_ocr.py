@@ -106,7 +106,7 @@ class MistralOCR:
         new_text = "\n".join(result_lines)
         return {"text": new_text, "tables": tables, "images": image_data_dict}
 
-    def split_into_sections_with_title(self, processed_text):
+    def split_sections(self, processed_text):
         """
         Splits the processed markdown text into a title (if it exists) and a list of sections.
 
@@ -118,6 +118,7 @@ class MistralOCR:
             they are concatenated until a section with body text is encountered.
             - If the markdown text does not start with a header symbol, all text prior to the first header is ignored.
             - If a section's header (its first non-empty line) contains texts like "bibliography" or "reference" (case-insensitive),
+            that section is omitted from the final output.
             that section is omitted from the final output.
 
         Parameters:
@@ -152,7 +153,7 @@ class MistralOCR:
         merged_sections = []
         pending = ""  # holds concatenated header-only sections
         for sec in sections:
-            if self.is_only_headers(sec):
+            if self._is_only_headers(sec):
                 pending = pending + "\n" + sec if pending else sec
             else:
                 if pending:
@@ -202,10 +203,8 @@ class MistralOCR:
         return True
 
     @staticmethod
-    def is_only_headers(section):
-        """
-        Returns True if every non-empty line in the section starts with '#' (i.e. the section contains only header lines).
-        """
+    def _is_only_headers(section):
+        """Returns True if every non-empty line in the section starts with '#' (i.e. header)."""
         lines = section.splitlines()
         for line in lines:
             stripped = line.strip()
