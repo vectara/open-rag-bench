@@ -119,9 +119,8 @@ class MistralOCR:
             - If the markdown text does not start with a header symbol, all text prior to the first header is ignored.
             - If a section's header (its first non-empty line) contains texts like "bibliography" or "reference" (case-insensitive),
             that section is omitted from the final output.
-            that section is omitted from the final output.
 
-        Parameters:
+        Args:
             processed_text (str): The full processed markdown text (e.g. with table placeholders).
 
         Returns:

@@ -5,7 +5,7 @@ from openai import OpenAI
 from typing import Dict, List, Optional
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
-from prompts.arxiv_templates import *
+from prompts.arxiv_templates import TEXT_EXTRACTIVE_INSTRUCTION, TEXT_ABSTRACTIVE_INSTRUCTION
 
 PROMPT_MAP = {
     "text_extractive": TEXT_EXTRACTIVE_INSTRUCTION,
