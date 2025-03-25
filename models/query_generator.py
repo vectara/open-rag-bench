@@ -14,6 +14,7 @@ PROMPT_MAP = {
 
 
 class BaseQueryGenerator:
+
     def __init__(self):
         pass
 
@@ -37,32 +38,32 @@ class BaseQueryGenerator:
 
         # Find the start index (first occurrence of "Question 1:")
         try:
-            start_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("Question 1:"))
+            start_idx = next(i for i, line in enumerate(lines)
+                             if line.strip().startswith("Question 1:"))
         except StopIteration:
             return None
 
         # Find the end index (first occurrence of "Answer 5:")
         try:
-            end_idx = next(i for i, line in enumerate(lines) if line.strip().startswith("Answer 5:"))
+            end_idx = next(i for i, line in enumerate(lines)
+                           if line.strip().startswith("Answer 5:"))
         except StopIteration:
             return None
 
         # Slice the valid block and join back into a single string
-        valid_text = "\n".join(lines[start_idx:end_idx+1])
+        valid_text = "\n".join(lines[start_idx:end_idx + 1])
 
         # Define a regex pattern that captures the 5 QA pairs from the valid text block.
-        pattern = (
-            r"Question\s*1:\s*(?P<q1>.+?)\s*"
-            r"Answer\s*1:\s*(?P<a1>.+?)\s*"
-            r"Question\s*2:\s*(?P<q2>.+?)\s*"
-            r"Answer\s*2:\s*(?P<a2>.+?)\s*"
-            r"Question\s*3:\s*(?P<q3>.+?)\s*"
-            r"Answer\s*3:\s*(?P<a3>.+?)\s*"
-            r"Question\s*4:\s*(?P<q4>.+?)\s*"
-            r"Answer\s*4:\s*(?P<a4>.+?)\s*"
-            r"Question\s*5:\s*(?P<q5>.+?)\s*"
-            r"Answer\s*5:\s*(?P<a5>.+)"
-        )
+        pattern = (r"Question\s*1:\s*(?P<q1>.+?)\s*"
+                   r"Answer\s*1:\s*(?P<a1>.+?)\s*"
+                   r"Question\s*2:\s*(?P<q2>.+?)\s*"
+                   r"Answer\s*2:\s*(?P<a2>.+?)\s*"
+                   r"Question\s*3:\s*(?P<q3>.+?)\s*"
+                   r"Answer\s*3:\s*(?P<a3>.+?)\s*"
+                   r"Question\s*4:\s*(?P<q4>.+?)\s*"
+                   r"Answer\s*4:\s*(?P<a4>.+?)\s*"
+                   r"Question\s*5:\s*(?P<q5>.+?)\s*"
+                   r"Answer\s*5:\s*(?P<a5>.+)")
 
         match = re.fullmatch(pattern, valid_text, re.DOTALL)
         if not match:
@@ -94,7 +95,8 @@ class BaseQueryGenerator:
         # ^#+   : the line starts with one or more '#' characters
         # .*    : then any characters
         # \b(...)\b : one of the keywords as a whole word
-        pattern = re.compile(r'^#+.*\b(introduction|abstract|conclusion)\b', re.IGNORECASE)
+        pattern = re.compile(r'^#+.*\b(introduction|abstract|conclusion)\b',
+                             re.IGNORECASE)
 
         # Split the text into individual lines and check each header line.
         for line in markdown_text.splitlines():
@@ -117,16 +119,22 @@ class OpenAIQueryGenerator(BaseQueryGenerator):
         prompt_for_extractive_query (str): The prompt template used to instruct the assistant.
     """
 
-    def __init__(self, model: str = "gpt-4o-mini", openai_api_key: Optional[str] = None) -> None:
+    def __init__(self,
+                 model: str = "gpt-4o-mini",
+                 openai_api_key: Optional[str] = None) -> None:
         """Initialize the OpenAI instance."""
-        final_openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
+        final_openai_api_key = openai_api_key or os.environ.get(
+            "OPENAI_API_KEY")
         if not final_openai_api_key:
-            raise ValueError("OpenAI API key is required. Please provide it via function argument or environment variable.")
+            raise ValueError(
+                "OpenAI API key is required. Please provide it via function argument or environment variable."
+            )
 
         self.client: OpenAI = OpenAI(api_key=final_openai_api_key)
         self.model: str = model
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60),
+           stop=stop_after_attempt(6))
     def generate(self, title, text, query_type="text") -> str:
         if query_type == "text":
             if self._header_contains_keywords(text):
@@ -138,11 +146,11 @@ class OpenAIQueryGenerator(BaseQueryGenerator):
         while qa_pairs is None:
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.
-            ).choices[0].message.content
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }],
+                temperature=0.).choices[0].message.content
             qa_pairs = self._extract_qa_pairs(response)
         return qa_pairs
 
@@ -161,19 +169,28 @@ class VLLMQueryGenerator(BaseQueryGenerator):
         prompt_for_extractive_query (str): The prompt template used to instruct the assistant.
     """
 
-    def __init__(self, model: str = "Qwen/Qwen2.5-72B-Instruct", vllm_api_key: Optional[str] = None, base_url: Optional[str] = None) -> None:
+    def __init__(self,
+                 model: str = "Qwen/Qwen2.5-72B-Instruct",
+                 vllm_api_key: Optional[str] = None,
+                 base_url: Optional[str] = None) -> None:
         """Initialize the OpenAI instance."""
         final_vllm_api_key = vllm_api_key or os.environ.get("VLLM_API_KEY")
         if not final_vllm_api_key:
-            raise ValueError("OpenAI API key is required. Please provide it via function argument or environment variable.")
+            raise ValueError(
+                "OpenAI API key is required. Please provide it via function argument or environment variable."
+            )
         final_base_url = base_url or os.environ.get("VLLM_BASE_URL")
         if not final_base_url:
-            raise ValueError("Base URL for vLLM is required. Please provide it via function argument.")
+            raise ValueError(
+                "Base URL for vLLM is required. Please provide it via function argument."
+            )
 
-        self.client: OpenAI = OpenAI(api_key=final_vllm_api_key, base_url=base_url)
+        self.client: OpenAI = OpenAI(api_key=final_vllm_api_key,
+                                     base_url=base_url)
         self.model: str = model
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60),
+           stop=stop_after_attempt(6))
     def generate(self, title, text, query_type="text") -> str:
         if query_type == "text":
             if self._header_contains_keywords(text):
@@ -185,12 +202,12 @@ class VLLMQueryGenerator(BaseQueryGenerator):
         while qa_pairs is None:
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }],
                 temperature=0.,
                 frequency_penalty=0,
-                presence_penalty=0
-            ).choices[0].message.content
+                presence_penalty=0).choices[0].message.content
             qa_pairs = self._extract_qa_pairs(response)
         return qa_pairs

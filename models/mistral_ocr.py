@@ -2,8 +2,8 @@ import re
 import os
 import json
 from mistralai import Mistral
-from typing import Any, Dict, List, Optional
 from tenacity import retry, stop_after_attempt, wait_random_exponential
+
 
 class MistralOCR:
     """A class to handle OCR operations using Mistral and OpenAI APIs.
@@ -12,26 +12,29 @@ class MistralOCR:
     and convert the extracted data to Markdown format with embedded image data.
     """
 
-    def __init__(self, mistral_api_key: str = None, openai_api_key: str = None) -> None:
+    def __init__(self, mistral_api_key: str = None) -> None:
         """Initializes the MistralOCR instance with API keys"""
-        final_mistral_api_key = mistral_api_key or os.environ.get("MISTRAL_API_KEY")
+        final_mistral_api_key = mistral_api_key or os.environ.get(
+            "MISTRAL_API_KEY")
         if not final_mistral_api_key:
-            raise ValueError("Mistral API key is required. Please provide it via function argument or environment variable.")
+            raise ValueError(
+                "Mistral API key is required. Please provide it via function argument or environment variable."
+            )
 
         self.mistral_client = Mistral(api_key=final_mistral_api_key)
 
     def upload(self, path: str) -> None:
         """Uploads a PDF file to Mistral API"""
-        self.uploaded_pdf = self.mistral_client.files.upload(
-            file={
-                "file_name": "uploaded_file.pdf",
-                "content": open(path, "rb"),
-            },
-            purpose="ocr"
-        )
-        self.signed_url = self.mistral_client.files.get_signed_url(file_id=self.uploaded_pdf.id)
+        self.uploaded_pdf = self.mistral_client.files.upload(file={
+            "file_name": "uploaded_file.pdf",
+            "content": open(path, "rb"),
+        },
+                                                             purpose="ocr")
+        self.signed_url = self.mistral_client.files.get_signed_url(
+            file_id=self.uploaded_pdf.id)
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(min=1, max=60),
+           stop=stop_after_attempt(6))
     def extract(self):
         """Parse the OCR response from Mistral API"""
         response = self.mistral_client.ocr.process(
@@ -40,8 +43,7 @@ class MistralOCR:
                 "type": "document_url",
                 "document_url": self.signed_url.url,
             },
-            include_image_base64=True
-        )
+            include_image_base64=True)
         return json.loads(response.model_dump_json())
 
     def get_raw_markdown(self, ocr_response) -> str:
@@ -86,8 +88,9 @@ class MistralOCR:
         while i < len(lines):
             line = lines[i]
             # Check if the current line looks like a table row and the next line is a separator row.
-            if i < len(lines) - 1 and self._is_table_row(line) and self._is_separator_line(lines[i+1]):
-                table_lines = [line, lines[i+1]]
+            if i < len(lines) - 1 and self._is_table_row(
+                    line) and self._is_separator_line(lines[i + 1]):
+                table_lines = [line, lines[i + 1]]
                 i += 2
                 # Collect subsequent table rows.
                 while i < len(lines) and self._is_table_row(lines[i]):
@@ -174,7 +177,9 @@ class MistralOCR:
             else:
                 header_line = ""
             # Check if the header line contains "bibliograph" or "reference".
-            if header_line.lower().find("bibliograph") != -1 or header_line.lower().find("reference") != -1:
+            if header_line.lower().find(
+                    "bibliograph") != -1 or header_line.lower().find(
+                        "reference") != -1:
                 continue
             filtered_sections.append(sec)
 
@@ -184,7 +189,8 @@ class MistralOCR:
     def _is_table_row(line):
         """Returns True if the line appears to be a Markdown table row."""
         stripped = line.strip()
-        return '|' in stripped and stripped.startswith('|') and stripped.endswith('|')
+        return '|' in stripped and stripped.startswith(
+            '|') and stripped.endswith('|')
 
     @staticmethod
     def _is_separator_line(line):
@@ -212,7 +218,8 @@ class MistralOCR:
         return True
 
     @staticmethod
-    def _replace_placeholders_in_markdown(markdown_str: str, placeholder_dict: dict) -> str:
+    def _replace_placeholders_in_markdown(markdown_str: str,
+                                          placeholder_dict: dict) -> str:
         """Replaces placeholders in Markdown with actual table string or base64 encoded image data.
 
         Args:
@@ -223,7 +230,9 @@ class MistralOCR:
             str: The Markdown text with images replaced by base64 data.
         """
         for placeholder, content in placeholder_dict.items():
-            markdown_str = markdown_str.replace(f"![{placeholder}]({placeholder})", f"![{placeholder}]({content})")
+            markdown_str = markdown_str.replace(
+                f"![{placeholder}]({placeholder})",
+                f"![{placeholder}]({content})")
         return markdown_str
 
     def convert_pdf_to_markdown(self, path: str) -> str:

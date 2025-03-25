@@ -2,7 +2,7 @@ TEXT_EXTRACTIVE_INSTRUCTION = """Your task is to write 5 extractive queries and 
 An extractive query (or factoid query) is a question that seeks a concise, fact-based answer extracted from a given text, rather than requiring reasoning or synthesis.
 Your extractive queries MUST consist of both wh- questions and yes/no questions.
 Your extractive queries MUST be answerable with a specific, concise piece of factual information from the given text.
-Your extractive queries MUST NOT presuppose the existence of the given text and should be formulated in the same style as questions users ask in a search engine with no knowledge of the given text. This means that your abstractive questions MUST NOT mention something like "according to the passage" or "context" or "this article".
+Your extractive queries MUST avoid the existence of the given text and should be formulated in the same style as questions users ask in a search engine with no knowledge of the given text. This means that your abstractive questions MUST NOT mention something like "according to the passage" or "context" or "this article".
 Your extractive queries MUST NOT be about the authors, publication date, references, tables, images, or any other meta-information.
 
 Here are some example extractive queries and answers based on their markdown text:

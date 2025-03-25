@@ -5,10 +5,12 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from typing import Dict
 
+
 def read_json(path: str) -> Dict:
     """Read JSON from a file."""
     with open(path, 'r') as f:
         return json.load(f)
+
 
 def get_response(query: str | None = None,
                  metadata: Dict[str, str] = {},
@@ -28,10 +30,13 @@ def get_response(query: str | None = None,
     if query is not None:
         metadata['all'] = urllib.parse.quote(query)
     combined_query = '+AND+'.join([f'{k}:{v}' for k, v in metadata.items()])
-    url = (f'http://export.arxiv.org/api/query?search_query={combined_query}'
-           f'&start=0&max_results={max_results}&sortBy=lastUpdatedDate&sortOrder=descending')
+    url = (
+        f'http://export.arxiv.org/api/query?search_query={combined_query}'
+        f'&start=0&max_results={max_results}&sortBy=lastUpdatedDate&sortOrder=descending'
+    )
     with urllib.request.urlopen(url) as response:
         return response.read().decode('utf-8')
+
 
 def download_pdfs(response: str, download_dir: str = 'data/pdf/arxiv') -> None:
     """
@@ -50,7 +55,9 @@ def download_pdfs(response: str, download_dir: str = 'data/pdf/arxiv') -> None:
     ns = {'atom': 'http://www.w3.org/2005/Atom'}
 
     for entry in root.findall('atom:entry', ns):
-        title = entry.find('atom:title', ns).text.strip().replace('\n', ' ').replace(' ', '_')
+        title = entry.find('atom:title',
+                           ns).text.strip().replace('\n',
+                                                    ' ').replace(' ', '_')
         pdf_url = None
 
         for link in entry.findall('atom:link', ns):
@@ -68,6 +75,7 @@ def download_pdfs(response: str, download_dir: str = 'data/pdf/arxiv') -> None:
             urllib.request.urlretrieve(pdf_url, file_path)
         else:
             print("PDF link not found for entry:", title)
+
 
 def main():
     """Interact with the arxiv API to download PDFs based on categories."""
@@ -92,7 +100,8 @@ def main():
             }
             curr_max_results = max_results + 1 if i < residual else max_results
             try:
-                response = get_response(metadata=metadata, max_results=curr_max_results)
+                response = get_response(metadata=metadata,
+                                        max_results=curr_max_results)
                 download_pdfs(response, download_dir=f'pdf/arxiv/{category}')
             except Exception as e:
                 print(f"Failed to download {category} {sub_category}: {e}")

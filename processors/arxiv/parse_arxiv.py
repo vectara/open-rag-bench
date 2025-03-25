@@ -5,13 +5,19 @@ from models.mistral_ocr import MistralOCR
 
 model = MistralOCR()
 
+
 def write_json(data, output_path):
     with open(output_path, "w") as f:
         json.dump(data, f, indent=4)
 
+
 def process_and_save_pdf_md(pdf_path, output_dir):
     markdown = model.convert_pdf_to_markdown(pdf_path)
-    write_json(markdown, os.path.join(output_dir, os.path.basename(pdf_path).replace(".pdf", ".json")))
+    write_json(
+        markdown,
+        os.path.join(output_dir,
+                     os.path.basename(pdf_path).replace(".pdf", ".json")))
+
 
 def iterate_pdfs(input_directory, action, *args, **kwargs):
     """
@@ -32,6 +38,7 @@ def iterate_pdfs(input_directory, action, *args, **kwargs):
                 print(f"Processing {pdf_path}...")
                 action(pdf_path, *args, **kwargs)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_dir", type=str, default="data/pdf/arxiv")
@@ -39,4 +46,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    iterate_pdfs(args.input_dir, process_and_save_pdf_md, output_dir=args.output_dir)
+    iterate_pdfs(args.input_dir,
+                 process_and_save_pdf_md,
+                 output_dir=args.output_dir)
