@@ -1,14 +1,17 @@
 import os
-import json
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                '..')))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 import argparse
-from models.mistral_ocr import MistralOCR
+from tqdm import tqdm
+from utils import write_json
+from models.processors import MistralOCR
 
 model = MistralOCR()
-
-
-def write_json(data, output_path):
-    with open(output_path, "w") as f:
-        json.dump(data, f, indent=4)
 
 
 def process_and_save_pdf_md(pdf_path, output_dir):
@@ -32,17 +35,16 @@ def iterate_pdfs(input_directory, action, *args, **kwargs):
         **kwargs: Additional keyword arguments to pass to the action function.
     """
     for root, _, files in os.walk(input_directory):
-        for file in files:
+        for file in tqdm(files):
             if file.lower().endswith(".pdf"):
                 pdf_path = os.path.join(root, file)
-                print(f"Processing {pdf_path}...")
                 action(pdf_path, *args, **kwargs)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_dir", type=str, default="data/pdf/arxiv")
-    parser.add_argument("--output_dir", type=str, default="cache/pdf/arxiv")
+    parser.add_argument("--input_dir", type=str, default="data/raw/pdf/arxiv")
+    parser.add_argument("--output_dir", type=str, default="data/ocr/pdf/arxiv")
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 

@@ -2,52 +2,41 @@ import os
 import json
 import argparse
 from tqdm import tqdm
-from models.query_generator import OpenAIQueryGenerator
-from models.mistral_ocr import MistralOCR
+from models.query_generator import QueryGenerator
+from models.processors import MistralOCR, MarkdownProcessor
+from joblib import Parallel, delayed, Memory, parallel_backend
+from utils import read_json, write_json
+
+CACHE_DIR = 'cache'
+os.makedirs(CACHE_DIR, exist_ok=True)
+MEMORY = Memory(CACHE_DIR, verbose=0)
+PROCESSOR = MarkdownProcessor()
 
 
-def read_json(path):
-    with open(path, 'r') as f:
-        return json.load(f)
-
-
-def write_json(data, path):
-    with open(path, 'w') as f:
-        json.dump(data, f)
-
-
-def concat_section_with_qa_pairs(sections, qa_pairs):
-    if len(sections["sections"]) != len(qa_pairs):
-        raise ValueError(
-            "Mismatch between number of sections and QA pair lists")
-
-    integrated_data = {"title": sections["title"], "sections": []}
-
-    for i, section in enumerate(sections["sections"]):
-        section_data = {"text": section, "qa_pairs": qa_pairs[i]}
-        integrated_data["sections"].append(section_data)
-
-    return integrated_data
-
-
+@MEMORY.cache
 def generate_per_file(sections):
     title = sections['title']
-    qa_pairs = [
-        generator.generate(title, section)
-        for section in tqdm(sections['sections'])
-    ]
+    with parallel_backend('threading', n_jobs=30):
+        qa_pairs = Parallel(verbose=5)(
+            delayed(generator.generate)(title,
+                                        text=section['text'],
+                                        table_data=section['tables'],
+                                        image_data=section['images'])
+            for section in sections['sections'])
     return qa_pairs
 
 
-def generate_batch(input_dir, output_dir, sections_dir):
+def generate_batch(input_dir, cache_dir, output_dir):
     for filename in tqdm(os.listdir(input_dir)):
         if filename.endswith('.json'):
+            print(f"Processing {filename}...")
             markdown = read_json(os.path.join(input_dir, filename))
-            sections = ocr.split_sections(markdown['text'])
+            sections = PROCESSOR.split_sections(markdown)
             qa_pairs = generate_per_file(sections)
-            write_json(qa_pairs, os.path.join(output_dir, filename))
-            integrated_data = concat_section_with_qa_pairs(sections, qa_pairs)
-            write_json(integrated_data, os.path.join(sections_dir, filename))
+            write_json(qa_pairs, os.path.join(cache_dir, filename))
+            integrated_data = PROCESSOR.concat_section_with_qa_pairs(
+                sections, qa_pairs)
+            write_json(integrated_data, os.path.join(output_dir, filename))
 
 
 if __name__ == "__main__":
@@ -55,23 +44,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_dir",
         type=str,
-        default="/home/renyi/projects/ragleaderboard/data/processed/pdf/arxiv")
+        default="/home/renyi/projects/ragleaderboard/data/ocr/pdf/arxiv")
     parser.add_argument(
-        "--output_dir",
+        "--cache_dir",
         type=str,
         default=
         "/home/renyi/projects/ragleaderboard/data/processed/pdf/arxiv/qa_pairs")
     parser.add_argument(
-        "--sections_dir",
+        "--output_dir",
         type=str,
         default=
         "/home/renyi/projects/ragleaderboard/data/processed/pdf/arxiv/sections")
+    parser.add_argument("--model", type=str, default="gpt-4o-mini")
     args = parser.parse_args()
     input_dir = args.input_dir
+    cache_dir = args.cache_dir
     output_dir = args.output_dir
-    sections_dir = args.sections_dir
+    os.makedirs(cache_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    model = args.model
 
     ocr = MistralOCR()
-    generator = OpenAIQueryGenerator()
+    generator = QueryGenerator(model=model)
 
-    generate_batch(input_dir, output_dir, sections_dir)
+    generate_batch(input_dir, cache_dir, output_dir)

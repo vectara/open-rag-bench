@@ -1,22 +1,109 @@
 import os
-import re
+import sys
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                '..')))
+
+import re
+from utils import read_config
 from openai import OpenAI
 from typing import Dict, List, Optional
 from tenacity import retry, stop_after_attempt, wait_random_exponential
-
-from prompts.arxiv_templates import TEXT_EXTRACTIVE_INSTRUCTION, TEXT_ABSTRACTIVE_INSTRUCTION
+from models.processors import MarkdownProcessor
+from prompts.arxiv_templates import EXTRACTIVE_INSTRUCTION, ABSTRACTIVE_INSTRUCTION, TABLE_INSTRUCTION, IMAGE_INSTRUCTION
 
 PROMPT_MAP = {
-    "text_extractive": TEXT_EXTRACTIVE_INSTRUCTION,
-    "text_abstractive": TEXT_ABSTRACTIVE_INSTRUCTION,
+    "extractive": EXTRACTIVE_INSTRUCTION,
+    "abstractive": ABSTRACTIVE_INSTRUCTION,
 }
+OPENAI_MODELS = read_config("query_configs.yaml")["OPENAI_MODELS"]
 
 
-class BaseQueryGenerator:
+class QueryGenerator:
 
-    def __init__(self):
-        pass
+    def __init__(self,
+                 model: str = "gpt-4o-mini",
+                 api_key: Optional[str] = None,
+                 base_url: Optional[str] = None) -> None:
+
+        if model in OPENAI_MODELS:
+            api_key = api_key or os.environ.get("OPENAI_API_KEY")
+            base_url = None
+        else:
+            api_key = api_key or os.environ.get("VLLM_API_KEY")
+            base_url = base_url or os.environ.get("VLLM_BASE_URL")
+        if not api_key:
+            raise ValueError(
+                "OpenAI/VLLM API key is required. Please provide it via function argument or environment variable."
+            )
+
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.model_args = {"model": model}
+        if model != "o3-mini":
+            self.model_args.update({
+                "temperature": 0.,
+                "frequency_penalty": 1,
+                "seed": 2
+            })
+        self.processor = MarkdownProcessor()
+
+    @retry(wait=wait_random_exponential(min=1, max=60),
+           stop=stop_after_attempt(6))
+    def generate(self, title, text, table_data=None, image_data=None) -> str:
+        if len(text) < 200:
+            return []
+        if self._header_contains_keywords(text):
+            query_type = "abstractive"
+        else:
+            query_type = "extractive"
+        if query_type == "extractive":
+            table_instruction, image_instruction = '', ''
+            if table_data not in (None, {}):
+                table_instruction = TABLE_INSTRUCTION
+                text = self.processor.replace_placeholders_in_markdown(
+                    text, table_data)
+            if image_data not in (None, {}):
+                image_instruction = IMAGE_INSTRUCTION
+            prompt = PROMPT_MAP[query_type].format(
+                title=title,
+                text=text,
+                table_instruction=table_instruction,
+                image_instruction=image_instruction)
+        else:
+            prompt = PROMPT_MAP[query_type].format(title=title, text=text)
+
+        if image_data not in (None, {}):
+            messages = [{
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": prompt
+                }]
+            }]
+            for base64 in image_data.values():
+                messages[0]["content"].append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": base64,
+                        "detail": "high"
+                    }
+                })
+            self.model_args.update({"model": "gpt-4o"})
+        else:
+            messages = [{"role": "user", "content": prompt}]
+        self.model_args.update({"messages": messages})
+
+        qa_pairs = None
+        failure_counter = 0
+        while qa_pairs is None and failure_counter < 5:
+            response = self.client.chat.completions.create(**self.model_args)
+            response_text = response.choices[0].message.content
+            qa_pairs = self._extract_qa_pairs(response_text)
+            failure_counter += 1
+        if qa_pairs is None or qa_pairs == []:
+            return []
+            # raise ValueError("Failed to generate a valid answer after multiple attempts.")
+        return qa_pairs
 
     @staticmethod
     def _extract_qa_pairs(llm_output: str) -> Optional[List[Dict[str, str]]]:
@@ -36,10 +123,10 @@ class BaseQueryGenerator:
         # Split the text into lines and remove empty lines
         lines = [line for line in llm_output.splitlines() if line.strip()]
 
-        # Find the start index (first occurrence of "Question 1:")
+        # Find the start index (first occurrence of "Query 1:")
         try:
             start_idx = next(i for i, line in enumerate(lines)
-                             if line.strip().startswith("Question 1:"))
+                             if line.strip().startswith("Query 1:"))
         except StopIteration:
             return None
 
@@ -54,15 +141,15 @@ class BaseQueryGenerator:
         valid_text = "\n".join(lines[start_idx:end_idx + 1])
 
         # Define a regex pattern that captures the 5 QA pairs from the valid text block.
-        pattern = (r"Question\s*1:\s*(?P<q1>.+?)\s*"
+        pattern = (r"Query\s*1:\s*(?P<q1>.+?)\s*"
                    r"Answer\s*1:\s*(?P<a1>.+?)\s*"
-                   r"Question\s*2:\s*(?P<q2>.+?)\s*"
+                   r"Query\s*2:\s*(?P<q2>.+?)\s*"
                    r"Answer\s*2:\s*(?P<a2>.+?)\s*"
-                   r"Question\s*3:\s*(?P<q3>.+?)\s*"
+                   r"Query\s*3:\s*(?P<q3>.+?)\s*"
                    r"Answer\s*3:\s*(?P<a3>.+?)\s*"
-                   r"Question\s*4:\s*(?P<q4>.+?)\s*"
+                   r"Query\s*4:\s*(?P<q4>.+?)\s*"
                    r"Answer\s*4:\s*(?P<a4>.+?)\s*"
-                   r"Question\s*5:\s*(?P<q5>.+?)\s*"
+                   r"Query\s*5:\s*(?P<q5>.+?)\s*"
                    r"Answer\s*5:\s*(?P<a5>.+)")
 
         match = re.fullmatch(pattern, valid_text, re.DOTALL)
@@ -104,110 +191,23 @@ class BaseQueryGenerator:
                 return True
         return False
 
-
-class OpenAIQueryGenerator(BaseQueryGenerator):
-    """
-    A class to manage interactions with the GPT-4o service for generating extractive queries from uploaded files.
-
-    Attributes:
-        client (OpenAI): The OpenAI client instance initialized with an API key.
-        model (str): The model name to be used for generating responses.
-        file (Optional[FileObject]): The file object uploaded via the `upload` method.
-        assistant (Optional[Assistant]): The assistant object created after file upload.
-        thread (Optional[Thread]): The conversation thread object.
-        run (Optional[Run]): The result object tracking the status of a generated thread run.
-        prompt_for_extractive_query (str): The prompt template used to instruct the assistant.
-    """
-
-    def __init__(self,
-                 model: str = "gpt-4o-mini",
-                 openai_api_key: Optional[str] = None) -> None:
-        """Initialize the OpenAI instance."""
-        final_openai_api_key = openai_api_key or os.environ.get(
-            "OPENAI_API_KEY")
-        if not final_openai_api_key:
-            raise ValueError(
-                "OpenAI API key is required. Please provide it via function argument or environment variable."
-            )
-
-        self.client: OpenAI = OpenAI(api_key=final_openai_api_key)
-        self.model: str = model
-
-    @retry(wait=wait_random_exponential(min=1, max=60),
-           stop=stop_after_attempt(6))
-    def generate(self, title, text, query_type="text") -> str:
-        if query_type == "text":
-            if self._header_contains_keywords(text):
-                query_type = "text_abstractive"
-            else:
-                query_type = "text_extractive"
-        prompt = PROMPT_MAP[query_type].format(title=title, text=text)
-        qa_pairs = None
-        while qa_pairs is None:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }],
-                temperature=0.).choices[0].message.content
-            qa_pairs = self._extract_qa_pairs(response)
-        return qa_pairs
+    @staticmethod
+    def _count_tokens(response):
+        return {
+            'input': response['usage']['input_tokens'],
+            'output': response['usage']['output_tokens'],
+        }
 
 
-class VLLMQueryGenerator(BaseQueryGenerator):
-    """
-    A class to manage interactions with the GPT-4o service for generating extractive queries from uploaded files.
+if __name__ == "__main__":
+    # Example usage
+    query_gen = QueryGenerator(model="gpt-4o-mini")
+    title = "Sample Title"
+    text = "# Introduction\nThis is a sample introduction.\n# Conclusion\nThis is a sample conclusion."
+    query_type = "text_extractive"
 
-    Attributes:
-        client (OpenAI): The OpenAI client instance initialized with an API key.
-        model (str): The model name to be used for generating responses.
-        file (Optional[FileObject]): The file object uploaded via the `upload` method.
-        assistant (Optional[Assistant]): The assistant object created after file upload.
-        thread (Optional[Thread]): The conversation thread object.
-        run (Optional[Run]): The result object tracking the status of a generated thread run.
-        prompt_for_extractive_query (str): The prompt template used to instruct the assistant.
-    """
-
-    def __init__(self,
-                 model: str = "Qwen/Qwen2.5-72B-Instruct",
-                 vllm_api_key: Optional[str] = None,
-                 base_url: Optional[str] = None) -> None:
-        """Initialize the OpenAI instance."""
-        final_vllm_api_key = vllm_api_key or os.environ.get("VLLM_API_KEY")
-        if not final_vllm_api_key:
-            raise ValueError(
-                "OpenAI API key is required. Please provide it via function argument or environment variable."
-            )
-        final_base_url = base_url or os.environ.get("VLLM_BASE_URL")
-        if not final_base_url:
-            raise ValueError(
-                "Base URL for vLLM is required. Please provide it via function argument."
-            )
-
-        self.client: OpenAI = OpenAI(api_key=final_vllm_api_key,
-                                     base_url=base_url)
-        self.model: str = model
-
-    @retry(wait=wait_random_exponential(min=1, max=60),
-           stop=stop_after_attempt(6))
-    def generate(self, title, text, query_type="text") -> str:
-        if query_type == "text":
-            if self._header_contains_keywords(text):
-                query_type = "text_abstractive"
-            else:
-                query_type = "text_extractive"
-        prompt = PROMPT_MAP[query_type].format(title=title, text=text)
-        qa_pairs = None
-        while qa_pairs is None:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": prompt
-                }],
-                temperature=0.,
-                frequency_penalty=0,
-                presence_penalty=0).choices[0].message.content
-            qa_pairs = self._extract_qa_pairs(response)
-        return qa_pairs
+    try:
+        result = query_gen.generate(title, text, query_type)
+        print(result)
+    except ValueError as e:
+        print(f"Error: {e}")

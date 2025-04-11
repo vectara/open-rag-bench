@@ -3,3 +3,6 @@ cache/
 __pycache__/
 draft*
 test*
+*copy*
+*experiment*
+*old*

@@ -1,15 +1,16 @@
 import os
-import json
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                '..')))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 from typing import Dict
-
-
-def read_json(path: str) -> Dict:
-    """Read JSON from a file."""
-    with open(path, 'r') as f:
-        return json.load(f)
+from utils import read_yaml
 
 
 def get_response(query: str | None = None,
@@ -80,7 +81,7 @@ def download_pdfs(response: str, download_dir: str = 'data/pdf/arxiv') -> None:
 def main():
     """Interact with the arxiv API to download PDFs based on categories."""
     try:
-        arxiv_categories = read_json('../configs/arxiv_categories.json')
+        arxiv_categories = read_yaml('configs/arxiv_configs.yaml')['categories']
     except:
         raise ValueError("Failed to read arxiv categories")
 
@@ -102,7 +103,8 @@ def main():
             try:
                 response = get_response(metadata=metadata,
                                         max_results=curr_max_results)
-                download_pdfs(response, download_dir=f'pdf/arxiv/{category}')
+                download_pdfs(response,
+                              download_dir=f'data/raw/pdf/arxiv/{category}')
             except Exception as e:
                 print(f"Failed to download {category} {sub_category}: {e}")
                 raise ValueError("Failed to download") from e
