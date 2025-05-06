@@ -20,26 +20,36 @@ We have finalized a draft version of our Arxiv dataset as the first step in our 
 This repository contains the code used to generate and refine our dataset:
 
 ```
-├── configs/                    # Configuration files
-│   ├── arxiv_configs.yaml      # Arxiv-specific configuration
-│   └── query_configs.yaml      # Query generation/evaluation configuration
-├── data/                       # Dataset storage
-│   ├── ocr/                    # Intermediate OCR results
-│   ├── processed/              # Final processed datasets
-│   └── raw/                    # Original unmodified data
-├── data_processing/            # Dataset-specific processing scripts
-│   └── arxiv/                  # Arxiv-specific processing
-│       ├── get_arxiv.py        # Script to download Arxiv papers
-│       └── parse_arxiv.py      # Script to parse Arxiv PDFs
-├── models/                     # Core processing modules
-│   ├── processors.py           # Document processing utilities
-│   ├── query_generator.py      # Query generation logic
-│   └── query_evaluator.py      # Query evaluation/filtering logic
-├── prompts/                    # LLM prompts
-│   └── arxiv_templates.py      # Arxiv-specific prompt templates
-├── generate_qa_pairs.py        # Main script for generating QA pairs
-├── post_filtering.py           # Script for filtering generated queries
-└── utils.py                    # Utility functions
+├── configs/                           # Configuration files
+│   ├── arxiv_configs.yaml             # Arxiv-specific configuration
+│   └── query_configs.yaml             # Query generation/evaluation configuration
+├── data/                              # Dataset storage
+│   ├── ocr/                           # Intermediate OCR results
+│   ├── processed/                     # Final processed datasets
+│   └── raw/                           # Original unmodified data
+├── openragbench/                      # Main package containing processing scripts
+│   ├── pipeline/                      # Workflow pipelines
+│   │   ├── data_processing/           # Data processing scripts
+│   │   │   ├── get_arxiv.py           # Script to download Arxiv papers
+│   │   │   ├── parse_arxiv.py         # Script to parse Arxiv PDFs
+│   │   │   ├── get_embeddings.py      # Script for generating embeddings
+│   │   │   └── mine_hns.py            # Script for mining hard-negative samples
+│   │   ├── query_generation/          # Query generation scripts
+│   │   │   ├── generate_qa_pairs.py   # Main script for generating QA pairs
+│   │   │   └── concat_sections_with_metadata.py # Script to concat sections with metadata
+│   │   └── post_filtering/            # Post-processing scripts
+│   │       ├── delete_invalid_queries.py # Script for deleting invalid queries
+│   │       ├── filter_by_doc_relevance.py # Script for filtering by relevance
+│   │       ├── validate_query_type.py # Script for validating query types
+│   │       └── convert_processed_to_dataset.py # Convert processed data to deliverable dataset
+├── models/                            # Core processing modules
+│   ├── processors.py                  # Document processing utilities
+│   ├── query_generator.py             # Query generation logic
+│   └── query_evaluator.py             # Query evaluation/filtering logic
+├── prompts/                           # LLM prompts
+│   └── arxiv_templates.py             # Arxiv-specific prompt templates
+└── utils.py                           # Utility functions
+
 ```
 
 ## Dataset Format
@@ -75,97 +85,146 @@ Our dataset is created through a systematic process:
 ### Setup
 1. Clone this repository:
 
-    ```
+    ```bash
     git clone [repository-url]
-    cd multimodal-rag-dataset
+    cd Open-RAG-Benchmark
     ```
 
 2. Install dependencies:
 
-    ```
+    ```bash
     pip install -r requirements.txt
     ```
 
-3. Configure your OpenAI API key:
+3. Install Flash Attention:
 
+    ```bash
+    pip install flash-attn --no-build-isolation
     ```
+
+4. Configure your OpenAI API key:
+
+    ```bash
     export OPENAI_API_KEY="your-api-key"
     ```
 
 ### Workflow
-The complete workflow for generating an Arxiv RAG dataset involves the following steps:
-1. Download Raw PDFs
 
-    ```
-    python data_processing/arxiv/get_arxiv.py
-    ```
+The workflow for generating an Arxiv RAG dataset now consists of four main stages: Data Processing, Query Generation, Post-Filtering of Queries, and Mining Hard-Negative Documents. Below is a detailed breakdown of each stage:
 
-    This downloads PDFs from Arxiv based on configurations in configs/arxiv_configs.yaml.
+#### 1. Data Processing
 
-2. Parse PDFs to Structured Format
+This initial stage focuses on downloading and processing raw documents from Arxiv.
 
-    ```
-    python data_processing/arxiv/parse_arxiv.py
-    ```
+1.1. **Download Raw PDFs**
 
-    This script:
-    - Processes the raw PDFs using OCR
-    - Extracts text, tables, and images
-    - Stores results in JSON format with placeholders for tables and images
+Execute the following script to download PDFs based on configurations defined in `configs/arxiv_configs.yaml`:
 
-3. Generate QA Pairs
+```bash
+python openragbench/pipeline/data_processing/get_arxiv.py
+```
 
-    ```
-    python generate_qa_pairs.py
-    ```
+1.2. **Parse PDFs to Structured Format**
 
-    This script:
-    - Segments documents into sections
-    - Generates retrieval queries per section using LLMs
-    - Handles multimodal content (tables and images)
+Use this script to process PDFs using OCR, extract text, tables, and images, and store the results in a structured JSON format:
 
-4. Post-Filter QA Pairs
+```bash
+python openragbench/pipeline/data_processing/parse_arxiv.py
+```
 
-    ```
-    python post_filtering.py
-    ```
+#### 2. Query Generation
 
-    This script filters out invalid or low-quality queries.
+In this stage, queries are generated and enriched with metadata for retrieval purposes.
+
+2.1. **Generate QA Pairs**
+
+Segment documents into sections and generate retrieval queries for each section using LLMs, handling multimodal content such as tables and images:
+
+```bash
+python openragbench/pipeline/query_generation/generate_qa_pairs.py
+```
+
+2.2. **Concatenate Sections with Metadata**
+
+Combine the generated queries with document metadata for context:
+
+```bash
+python openragbench/pipeline/query_generation/concat_sections_with_metadata.py
+```
+
+#### 3. Post-Filtering of Queries
+
+This stage aims to enhance the quality of the generated queries.
+
+3.1. **Delete Invalid Queries**
+
+Remove queries that are invalid or poorly styled:
+
+```bash
+python openragbench/pipeline/post_filtering/delete_invalid_queries.py
+```
+
+3.2. **Filter and Deduplicate**
+
+Execute the following scripts to filter queries based on document relevance, remove duplicates, balance them, and ensure they do not exceed the maximum threshold per document:
+
+```bash
+# Get embeddings for filtering
+python openragbench/pipeline/data_processing/get_embeddings.py
+
+# Filter queries
+python openragbench/pipeline/post_filtering/filter_by_doc_relevance.py
+```
+
+3.3. **Validate Query Types**
+
+Ensure all query types are validated and error-free with the following script:
+
+```bash
+python openragbench/pipeline/post_filtering/validate_query_type.py
+```
+
+3.4. **Convert to Final Dataset**
+
+Translate all processed data into a final, deliverable dataset:
+
+```bash
+python openragbench/pipeline/post_filtering/convert_processed_to_dataset.py
+```
+
+#### 4. Mining Hard-Negative Documents (Optional)
+
+This optional step involves mining hard negative documents that are entirely irrelevant to any existing query. It relies on agreement across multiple embedding models for accuracy. Specific customizations can be referenced in the script:
+
+```bash
+python openragbench/pipeline/data_processing/mine_hns.py
+```
 
 ## Current Challenges
 Several challenges in our dataset development process include:
-- Query Quality:
-    - Many queries remain too specific to individual sections despite filtering
-    - Some queries still assume prior document knowledge
-- OCR Performance:
-    - Mistral OCR performs well for structured documents but struggles with unstructured PDFs
-- Multimodal Integration:
-    - Ensuring proper extraction and integration of tables and images remains challenging
+- **OCR Performance**:
+  - Mistral OCR performs well for structured documents but struggles with unstructured PDFs
+- **Multimodal Integration**:
+  - Ensuring proper extraction and integration of tables and images remains challenging
 
 ## Next Steps
-### Enhanced Filtering:
-- Implement deduplication of similar queries
-- Add semantic similarity scoring
-- Develop query diversity metrics
-- Implement document-based LLM filtering
-
 ### Enhanced Dataset Structure and Usability:
-- Dataset Format and Content Enhancements
-    - Rich Metadata: Add comprehensive document metadata (authors, publication date, categories, citation counts) to enable better filtering and contextualization
-    - Flexible Chunking: Provide multiple content granularity levels (sections, paragraphs, sentences) to accommodate different retrieval strategies
-    Query Metadata: Classify queries by type (factual, conceptual, analytical), difficulty level, and whether they require multimodal understanding
-- Advanced Multimodal Representation
-    - Improved Image Integration: Replace basic placeholders with structured image objects including captions, alt text, and direct access URLs
-    - Structured Table Format: Provide both markdown and programmatically accessible structured formats for tables (headers/rows)
-    - Positional Context: Maintain clear positional relationships between text and visual elements
-- Sophisticated Query Generation
-    - Multi-stage Generation Pipeline: Implement targeted generation for different query types (factual, conceptual, multimodal)
-    - Diversity Controls: Ensure coverage of different difficulty levels and reasoning requirements
-    - Specialized Multimodal Queries: Generate queries specifically designed to test table and image understanding
-- Practitioner-Focused Tools
-    - Framework Integration Examples: Provide code samples showing dataset integration with popular RAG frameworks (LangChain, LlamaIndex, etc.)
-    - Evaluation Utilities: Develop standardized tools to benchmark RAG system performance using our dataset
-    - Interactive Explorer: Create a simple visualization tool to browse and understand dataset contents
+- **Dataset Format and Content Enhancements**
+  - Rich Metadata: Add comprehensive document metadata (authors, publication date, categories, etc.) to enable better filtering and contextualization
+  - Flexible Chunking: Provide multiple content granularity levels (sections, paragraphs, sentences) to accommodate different retrieval strategies
+  - Query Metadata: Classify queries by type (factual, conceptual, analytical), difficulty level, and whether they require multimodal understanding
+- **Advanced Multimodal Representation**
+  - Improved Image Integration: Replace basic placeholders with structured image objects including captions, alt text, and direct access URLs
+  - Structured Table Format: Provide both markdown and programmatically accessible structured formats for tables (headers/rows)
+  - Positional Context: Maintain clear positional relationships between text and visual elements
+- **Sophisticated Query Generation**
+  - Multi-stage Generation Pipeline: Implement targeted generation for different query types (factual, conceptual, multimodal)
+  - Diversity Controls: Ensure coverage of different difficulty levels and reasoning requirements
+  - Specialized Multimodal Queries: Generate queries specifically designed to test table and image understanding
+- **Practitioner-Focused Tools**
+  - Framework Integration Examples: Provide code samples showing dataset integration with popular RAG frameworks (LangChain, LlamaIndex, etc.)
+  - Evaluation Utilities: Develop standardized tools to benchmark RAG system performance using our dataset
+  - Interactive Explorer: Create a simple visualization tool to browse and understand dataset contents
 
 ### Dataset Expansion
 - Implement alternative solutions for PDF table & image extraction
@@ -173,8 +232,11 @@ Several challenges in our dataset development process include:
 - Broaden scope beyond academic papers to include other document types
 - Potentially add multilingual support
 
-## License
-(tbd)
-
 ## Acknowledgments
-We use OpenAI's GPT models for query generation and evaluation. (tbd)
+We use OpenAI's GPT models for query generation and evaluation. We used the following models for post-filtering for their outstanding performance on the [MTEB Benchmark](https://huggingface.co/spaces/mteb/leaderboard):
+- [Linq-AI-Research/Linq-Embed-Mistral](https://huggingface.co/Linq-AI-Research/Linq-Embed-Mistral)
+- [dunzhang/stella_en_1.5B_v5](https://huggingface.co/NovaSearch/stella_en_1.5B_v5)
+- [Alibaba-NLP/gte-Qwen2-7B-instruct](https://huggingface.co/Alibaba-NLP/gte-Qwen2-7B-instruct)
+- [infly/inf-retriever-v1](https://huggingface.co/infly/inf-retriever-v1)
+- [Salesforce/SFR-Embedding-Mistral](https://huggingface.co/Salesforce/SFR-Embedding-Mistral)
+- [openai/text-embedding-3-large](https://platform.openai.com/docs/models/text-embedding-3-large)

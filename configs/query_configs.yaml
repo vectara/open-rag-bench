@@ -1,4 +1,0 @@
-OPENAI_MODELS: !!set
-  gpt-4o-mini: null
-  gpt-4o: null
-  o3-mini: null
