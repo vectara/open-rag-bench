@@ -1,5 +1,5 @@
 # Open RAG Benchmark
-A multimodal (and potentially multilingual) Retrieval-Augmented Generation (RAG) dataset built from PDF documents.
+A multimodal Retrieval-Augmented Generation (RAG) dataset built from PDF documents.
 
 ## Overview
 This project delivers high-quality, multimodal datasets for training and evaluating RAG systems. The current implementation focuses on PDF documents, with special attention to preserving text, tables, and images alongside relevant retrieval queries.
@@ -12,9 +12,19 @@ Our dataset aims to provide:
 
 ## Current Progress
 We have finalized a draft version of our Arxiv dataset as the first step in our multimodal RAG dataset collection:
-- Documents: 400 PDF papers evenly distributed across all Arxiv categories
-- QA Pairs: 16,000+ valid question-answer pairs
+- Documents: **1000 PDF papers** evenly distributed across all Arxiv categories.
+	- 400 positive documents (i.e., each one is the golden document for some queries)
+	- 600 hard negative documents (i.e., they are completely irrelevant to all queries)
 - Multimodal Content: Extracted text, tables, and images from research papers
+- QA Pairs: 3045 valid question-answer pairs.
+	- Based on query types:
+		- 1793 abstractive queries (i.e., queries that require generating a summary or rephrased response using understanding and synthesis)
+		- 1252 extractive queries (i.e., queries that seek concise, fact-based answer directly extracted from a given text)
+	- Based on generation sources:
+		- 1914 text-only queries
+		- 763 text-image queries
+		- 148 text-table queries
+		- 220 text-table-image queries
 
 ## Repository Structure
 This repository contains the code used to generate and refine our dataset:
@@ -23,63 +33,100 @@ This repository contains the code used to generate and refine our dataset:
 ├── configs/                           # Configuration files
 │   ├── arxiv_configs.yaml             # Arxiv-specific configuration
 │   └── query_configs.yaml             # Query generation/evaluation configuration
-├── data/                              # Dataset storage
-│   ├── ocr/                           # Intermediate OCR results
-│   ├── processed/                     # Final processed datasets
-│   └── raw/                           # Original unmodified data
-├── openragbench/                      # Main package containing processing scripts
-│   ├── pipeline/                      # Workflow pipelines
-│   │   ├── data_processing/           # Data processing scripts
-│   │   │   ├── get_arxiv.py           # Script to download Arxiv papers
-│   │   │   ├── parse_arxiv.py         # Script to parse Arxiv PDFs
-│   │   │   ├── get_embeddings.py      # Script for generating embeddings
-│   │   │   └── mine_hns.py            # Script for mining hard-negative samples
-│   │   ├── query_generation/          # Query generation scripts
-│   │   │   ├── generate_qa_pairs.py   # Main script for generating QA pairs
-│   │   │   └── concat_sections_with_metadata.py # Script to concat sections with metadata
-│   │   └── post_filtering/            # Post-processing scripts
-│   │       ├── delete_invalid_queries.py # Script for deleting invalid queries
-│   │       ├── filter_by_doc_relevance.py # Script for filtering by relevance
-│   │       ├── validate_query_type.py # Script for validating query types
-│   │       └── convert_processed_to_dataset.py # Convert processed data to deliverable dataset
+├── pipeline/                      # Workflow pipelines
+│   ├── data_processing/           # Data processing scripts
+│   │   ├── get_arxiv.py           # Script to download Arxiv papers
+│   │   ├── parse_arxiv.py         # Script to parse Arxiv PDFs
+│   │   ├── get_embeddings.py      # Script for generating embeddings
+│   │   └── mine_hns.py            # Script for mining hard-negative samples
+│   ├── query_generation/          # Query generation scripts
+│   │   ├── generate_qa_pairs.py   # Main script for generating QA pairs
+│   │   └── concat_sections_with_metadata.py # Script to concat sections with metadata
+│   └── post_filtering/            # Post-processing scripts
+│       ├── delete_invalid_queries.py # Script for deleting invalid queries
+│       ├── filter_by_doc_relevance.py # Script for filtering by relevance
+│       ├── validate_query_type.py # Script for validating query types
+│       └── convert_processed_to_dataset.py # Convert processed data to deliverable dataset
 ├── models/                            # Core processing modules
+│   ├── encoders.py                    # Embedding model modules
 │   ├── processors.py                  # Document processing utilities
 │   ├── query_generator.py             # Query generation logic
 │   └── query_evaluator.py             # Query evaluation/filtering logic
 ├── prompts/                           # LLM prompts
 │   └── arxiv_templates.py             # Arxiv-specific prompt templates
 └── utils.py                           # Utility functions
-
 ```
 
 ## Dataset Format
-Each document in the dataset is represented as a JSON file with the following structure:
+Our dataset resembles the [BEIR dataset](https://github.com/beir-cellar/beir) format.
 
+- `pdf_urls.json`: This file provides the original PDF links to the papers in this dataset for downloading purpose, in the format below:
 ```
 {
-  "title": "Paper Title",
-  "sections": [
-    {
-      "text": "Section text content with placeholders for tables/images",
-      "tables": {"table_id1": "markdown_table_string", ...},
-      "images": {"image_id1": "base64_encoded_string", ...},
-      "qa_pairs": [
-        {"query": "Query text", "answer": "Answer text"},
-        ...
-      ]
-    },
-    ...
-  ]
+	"Paper ID": "Paper URL",
+	...
+}
+```
+
+- `corpus/`: This folder contains all papers processed in the JSON format below:
+```
+{
+	"title": "Paper Title",
+	"sections": [
+		{
+			"text": "Section text content with placeholders for tables/images",
+			"tables": {"table_id1": "markdown_table_string", ...},
+			"images": {"image_id1": "base64_encoded_string", ...},
+		},
+		...
+	],
+	"id": "Paper ID",
+	"authors": ["Author1", "Author2", ...],
+	"categories: ["Category1", "Category2", ...],
+	"abstract": "Abstract text",
+	"updated": "Updated date",
+	"published": "Published date"
+}
+```
+
+- `queries.json`: This file contains all generated queries in the format below:
+```
+{
+	"Query UUID": {
+		"query": "Query text",
+		"type": "Query type (abstractive/extractive)",
+		"source": "Generation source (text/text-image/text-table/text-table-image)"
+	},
+	...
+}
+```
+
+- `qrels.json`: This file contains the query-document-section relevance labels in the format below:
+```
+{
+	"Query UUID": {
+		"doc_id": "Paper ID",
+		"section_id": Section Index
+	},
+	...
+}
+```
+
+- `answers.json`: This file contains the answers for the generated queries in the format below:
+```
+{
+	"Query UUID": "Answer text",
+	...
 }
 ```
 
 ## Dataset Generation Process
 Our dataset is created through a systematic process:
-- Document Collection: Gathering documents from sources like Arxiv
-- Document Processing: Parsing PDFs via OCR into text, Markdown tables, and base64 encoded images
-- Content Segmentation: Dividing documents into sections based on structural elements
-- Query Generation: Using LLMs (currently gpt-4o-mini and gpt-4o) to generate retrieval queries for each section
-- Quality Filtering: Removing non-retrieval queries and ensuring quality through post-processing
+- Document Collection: Gathering documents from sources like Arxiv.
+- Document Processing: Parsing PDFs via OCR into text, Markdown tables, and base64 encoded images.
+- Content Segmentation: Dividing documents into sections based on structural elements.
+- Query Generation: Using LLMs (currently `gpt-4o-mini`) to generate retrieval queries for each section.
+- Quality Filtering: Removing non-retrieval queries and ensuring quality through post-processing via a set of encoders for retrieval filtering and `gpt-4o-mini` for query quality filtering.
 
 ## Replication
 ### Setup
