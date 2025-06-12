@@ -1,5 +1,11 @@
 data/
-cache/
-__pycache__/
+**/*cache*
+**/__pycache__/
 draft*
 test*
+*copy*
+*experiment*
+*old*
+official/
+**/embeddings/
+**/*zip*
